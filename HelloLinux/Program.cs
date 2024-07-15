@@ -4,6 +4,7 @@ using System.Globalization;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
+// TODO: Add Adkar sending!!!!!!!
 namespace HelloLinux
 {
     class Program
@@ -11,23 +12,24 @@ namespace HelloLinux
         //Channel id => POST =>  https://api.telegram.org/botXXX:YYY/sendMessage?chat_id=@ChannelUSERNAME&text=test  => channel id = result > chat > id [JSON]
 
         static string _botToken = ""; //Bot ID
-        static string _channelID = "-1002164667446"; // Channel ID
+        static string _channelID = "-1002102410457"; // Channel ID
         private static readonly HttpClient httpClient = new HttpClient();
         private const string baseUrl = "https://quran.ksu.edu.sa/ayat/safahat1/"; // Quran pages base url
         private const int numberPages = 604;
-        private static int currentPage = 1;
+        private static int currentPage = 331;
         private const int pagesPerPrayer = 5;
-        private static int currentPrayer = 2;
+        private static int currentPrayer = 1;
         private static Dictionary<string, TimeSpan> prayerTimes;
         static TelegramBotClient botClient;
         private const string prayerTimesUrl = "https://www.islamicfinder.org/prayer-widget/2507480/shafi/15/0/18.0/17.0"; //Algiers, Algeria prayer times of today
-
-
+        private const string linkAdkarMasa2 = "http://alphagyms.tn/masa2.png";
+        private const string linkAdkarSabah = "http://alphagyms.tn/sabah.png";
         static async Task Main(string[] args)
         {
             Console.WriteLine("********* Welcome to Daily Quran bot ************");
             Console.WriteLine("========> Starting bot ....");
             Debug.WriteLine($"(start) Current time: {DateTime.Now}");
+            Console.WriteLine($"(start) Current time: {DateTime.Now}");
             //Initializations
             botClient = new TelegramBotClient(_botToken);
             httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537");
@@ -35,11 +37,6 @@ namespace HelloLinux
             httpClient.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.5");
             httpClient.DefaultRequestHeaders.Referrer = new Uri("http://www.google.com");
 
-            //Enter arguments
-            Console.Write("Enter the starting page number: "); //Enter the starting page number
-            currentPage = int.Parse(Console.ReadLine());
-            Console.Write("Enter the starting prayer number: "); //Enter the starting prayer number
-            currentPrayer = int.Parse(Console.ReadLine());
 
             Console.WriteLine("========> Sending Test message ....");
             try
@@ -55,9 +52,10 @@ namespace HelloLinux
             //    await SendQuranPagesAsync();
             Console.WriteLine("=======> Getting prayer times for today..");
             await UpdatePrayerTimesAsync();
-            debugMsg("Starting the bot");
+           // debugMsg("Starting the bot ( نسخة بعد العيد )");
+
             Console.WriteLine("=======> Scheduling daily tasks..");
-            ScheduleDailyTasks();
+            await ScheduleDailyTimer();
             Console.WriteLine("\n \n .. \t Working .. Press any key to cancel");
 
             //  Console.ReadKey(); //Test on windows only
@@ -99,15 +97,61 @@ namespace HelloLinux
                 }
 
                 InputMediaPhoto inputOnlineFile = new InputMediaPhoto(InputFile.FromUri($"{baseUrl}{pageNumber}.png"));
-                if (pagesCounter == 0) inputOnlineFile.Caption = $"ورد صلاة {PrayerNumberToName(currentPrayer)} ❤️ ";
+
+                if (pagesCounter == 0) inputOnlineFile.Caption = $"ورد صلاة {PrayerNumberToName(currentPrayer)}  ";
                 // if (pageNumber == currentPage) inputOnlineFile.Caption = $"ورد صلاة {PrayerNumberToName(currentPrayer).Result} ❤️ ";
 
                 media[pagesCounter] = inputOnlineFile;
                 //   media[(pageNumber-1)%pagesPerPrayer] = inputOnlineFile;
                 pagesCounter++;
             }
+            dbgConsole($"Sending Quran pages!");
+            //Sending the pages and handling the rate limit exception
+            try
+            {
+                await botClient.SendMediaGroupAsync(chatId: _channelID, media: media);
+            }
+            catch (Telegram.Bot.Exceptions.ApiRequestException ex) when (ex.Message.Contains("Too Many Requests"))
+            {
+                var retryAfter = ex.Parameters?.RetryAfter ?? 5;
+                Console.WriteLine($"Rate limited by Telegram API. Retrying after {retryAfter+1} seconds...");
+                await Task.Delay(retryAfter+1 * 1000);
+                await botClient.SendMediaGroupAsync(chatId: _channelID, media: media);
+            }
+            // Send Adkar picture if current prayer is 1 or 3
+            if (currentPrayer == 1)
+            {
+                InputFile adkar = InputFile.FromUri(linkAdkarSabah);
+                try
+                {
+                    await botClient.SendPhotoAsync(_channelID, adkar, caption: "أذكار الصباح");
+                }
+                catch (Telegram.Bot.Exceptions.ApiRequestException ex) when (ex.Message.Contains("Too Many Requests"))
+                {
+                    var retryAfter = ex.Parameters?.RetryAfter ?? 5;
+                    Console.WriteLine($"Rate limited by Telegram API. Retrying after {retryAfter + 1} seconds...");
+                    await Task.Delay(retryAfter + 1 * 1000);
+                    await botClient.SendPhotoAsync(_channelID, adkar, caption: "أذكار الصباح");
+                }
 
-            await botClient.SendMediaGroupAsync(chatId: _channelID, media: media);
+            }
+            else if (currentPrayer == 3)
+            {
+                InputFile adkar = InputFile.FromUri(linkAdkarMasa2);
+                try
+                {
+                    await botClient.SendPhotoAsync(_channelID, adkar,caption: "أذكار المساء");
+                }
+                catch (Telegram.Bot.Exceptions.ApiRequestException ex) when (ex.Message.Contains("Too Many Requests"))
+                {
+                    var retryAfter = ex.Parameters?.RetryAfter ?? 5;
+                    Console.WriteLine($"Rate limited by Telegram API. Retrying after {retryAfter + 1} seconds...");
+                    await Task.Delay(retryAfter + 1 * 1000);
+                    await botClient.SendPhotoAsync(_channelID, adkar, caption: "أذكار المساء");
+                }
+
+            }
+
             // If the khatma is ended, send the ending message and the duaa
             if (ended_khatma)
             {
@@ -194,14 +238,23 @@ namespace HelloLinux
 
         }
 
-        //Schedule the daily tasks
-        private static void ScheduleDailyTasks()
+        //send message to console fnc
+       static void dbgConsole(string msg)
+        {
+            Console.WriteLine(msg);
+        }
+        // Schedule daily prayer timers 
+        private static async Task ScheduleTodayTimers()
         {
             var now = DateTime.Now;
-            Debug.WriteLine($"(schedule)Current time: {now}");
+            dbgConsole($"**************************** Scheduling Prayer Timers for today ****************************");
+            dbgConsole($"Current time: {now}");
+            int i = 1;
             foreach (var (prayerName, time) in prayerTimes)
             {
+                
                 var prayerTime = new DateTime(now.Year, now.Month, now.Day, time.Hours, time.Minutes, time.Seconds);
+                dbgConsole($" {i}- Prayer: {prayerName}, Time: {prayerTime}");
                 if (now > prayerTime)
                 {
                     prayerTime = prayerTime.AddDays(1);
@@ -212,32 +265,71 @@ namespace HelloLinux
                     Interval = prayerTime.Subtract(DateTime.Now).TotalMilliseconds,
                     AutoReset = false
                 };
+                dbgConsole($"Timer {i} set to be triggered after {timer.Interval/1000} seconds || {timer.Interval/(1000*60)} hours");
+                //To do after the time has elapsed!
                 timer.Elapsed += async (sender, args) =>
                 {
+                    dbgConsole($"Timer {i} triggered!");
+                    dbgConsole($"Sending Quran pages for prayer {prayerName} || {currentPrayer}!");
                     await SendQuranPagesAsync();
                     timer.Stop();
                     timer.Dispose();
+                    dbgConsole($"Timer {i} stopped and disposed!");
                 };
                 timer.Start();
+                i++;
             }
+            dbgConsole($"******************************** Schedule timers ended!*************************************************************");
+        }
+        //Schedule the daily timer (00:30) to update the prayer times and reset the counters
+        private static async Task ScheduleDailyTimer()
+        {
+            /*  var now = DateTime.Now;
+              Debug.WriteLine($"(schedule)Current time: {now}");
+              Console.WriteLine($"(schedule)Current time: {now}");
+              foreach (var (prayerName, time) in prayerTimes)
+              {
+                  var prayerTime = new DateTime(now.Year, now.Month, now.Day, time.Hours, time.Minutes, time.Seconds);
+                  if (now > prayerTime)
+                  {
+                      prayerTime = prayerTime.AddDays(1);
+                  }
 
-            // Schedule task to update prayer times and reset counters at 00:01
+                  var timer = new System.Timers.Timer()
+                  {
+                      Interval = prayerTime.Subtract(DateTime.Now).TotalMilliseconds,
+                      AutoReset = false
+                  };
+                  timer.Elapsed += async (sender, args) =>
+                  {
+                      await SendQuranPagesAsync();
+                      timer.Stop();
+                      timer.Dispose();
+                  };
+                  timer.Start();
+              }
+            I commented this code above because it might be the one causing the pages to be sent multiple times, 
+            Now I will try to schedule the tasks in a different way, by scheduling the tasks at the beginning of the day and at 00:30 (Starting directly from Fajr)
+            */
+            // Schedule task to update prayer times and reset counters at 00:30
+            var now = DateTime.Now;
             var resetTime = new DateTime(now.Year, now.Month, now.Day, 0, 30, 0).AddDays(1);
             var resetTimer = new System.Timers.Timer()
             {
 
-                AutoReset = false,
+                AutoReset = true,
                 Interval = resetTime.Subtract(DateTime.Now).TotalMilliseconds
             };
             resetTimer.Elapsed += async (sender, args) =>
             {
-                // resetTimer.Interval = 24 * 60 * 60 * 1000; // 24 hours
-
+                resetTimer.Interval = 24 * 60 * 60 * 1000; // 24 hours
                 await UpdatePrayerTimesAsync();
-                ScheduleDailyTasks();
-                debugMsg("Re-scheduling message!");
-                resetTimer.Stop();
-                resetTimer.Dispose();
+                await ScheduleTodayTimers();
+               // No need to do it again since the AutoReset is true await ScheduleDailyTimer();
+                // debugMsg("Re-scheduling message!");
+                //New CODE TRY
+               // resetTimer.Stop();
+              //  resetTimer.Dispose();
             };
             resetTimer.Start();
         }
