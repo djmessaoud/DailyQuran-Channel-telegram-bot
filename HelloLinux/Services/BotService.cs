@@ -18,6 +18,7 @@ namespace HelloLinux.Services
         private readonly StorageService _storageService;
         private readonly PrayerTimeService _prayerTimeService;
         private readonly Dictionary<long, string> _configState = new Dictionary<long, string>(); // ChatId -> State
+        private long _botId;
 
         public BotService(string token, StorageService storageService, PrayerTimeService prayerTimeService)
         {
@@ -41,6 +42,7 @@ namespace HelloLinux.Services
             );
 
             var me = await _botClient.GetMeAsync();
+            _botId = me.Id;
             Console.WriteLine($"Start listening for @{me.Username}");
         }
 
@@ -174,7 +176,7 @@ namespace HelloLinux.Services
                 _storageService.UpdateGroup(group);
 
                 _configState[chatId] = "WAITING_CITY";
-                await botClient.SendTextMessageAsync(chatId, "الرجاء إدخال اسم المدينة لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
+                await botClient.SendTextMessageAsync(chatId, "الرجاء الرد على هذه الرسالة باسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
                 return;
             }
 
@@ -183,7 +185,12 @@ namespace HelloLinux.Services
                 // Ensure only admin can continue the configuration
                 if (!await IsAdminAsync(botClient, chatId, message.From.Id))
                 {
-                    // Optionally ignore or warn. Ignoring is better to avoid spamming if normal users chat.
+                    return;
+                }
+
+                // Enforce reply to bot
+                if (message.ReplyToMessage == null || message.ReplyToMessage.From.Id != _botId)
+                {
                     return;
                 }
 
@@ -193,7 +200,7 @@ namespace HelloLinux.Services
                     group.City = messageText.Trim();
                     _storageService.UpdateGroup(group);
                     _configState[chatId] = "WAITING_COUNTRY";
-                    await botClient.SendTextMessageAsync(chatId, "ممتاز! الآن الرجاء إدخال اسم الدولة:", cancellationToken: cancellationToken);
+                    await botClient.SendTextMessageAsync(chatId, "ممتاز! الآن الرجاء الرد على هذه الرسالة باسم الدولة (يفضل بالإنجليزية):", cancellationToken: cancellationToken);
                 }
                 else if (state == "WAITING_COUNTRY")
                 {
@@ -224,28 +231,34 @@ namespace HelloLinux.Services
 
         private async Task<bool> IsAdminAsync(ITelegramBotClient botClient, long chatId, long userId)
         {
+            // Check for Anonymous Admin (GroupAnonymousBot)
+            if (userId == 1087968824) return true;
+
             try
             {
                 var chat = await botClient.GetChatAsync(chatId);
                 if (chat.Type == ChatType.Private) return true;
 
-                // Check specific member status
-                var member = await botClient.GetChatMemberAsync(chatId, userId);
-                return member.Status == ChatMemberStatus.Administrator || member.Status == ChatMemberStatus.Creator;
+                // 1. Try GetChatMember
+                try 
+                {
+                    var member = await botClient.GetChatMemberAsync(chatId, userId);
+                    if (member.Status == ChatMemberStatus.Administrator || member.Status == ChatMemberStatus.Creator)
+                        return true;
+                }
+                catch { /* Ignore and try fallback */ }
+
+                // 2. Fallback to GetChatAdministrators (more reliable in some cases)
+                var admins = await botClient.GetChatAdministratorsAsync(chatId);
+                foreach (var admin in admins)
+                {
+                    if (admin.User.Id == userId) return true;
+                }
+                
+                return false;
             }
             catch
             {
-                // Fallback to list check if direct check fails (though direct check is better)
-                try
-                {
-                    var admins = await botClient.GetChatAdministratorsAsync(chatId);
-                    foreach (var admin in admins)
-                    {
-                        if (admin.User.Id == userId) return true;
-                    }
-                }
-                catch { }
-                
                 return false;
             }
         }
