@@ -48,6 +48,22 @@ namespace HelloLinux.Services
 
         private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
+            // Handle Bot Added to Group
+            if (update.Type == UpdateType.MyChatMember && update.MyChatMember != null)
+            {
+                var myChatMember = update.MyChatMember;
+                if (myChatMember.NewChatMember.Status == ChatMemberStatus.Administrator || 
+                    myChatMember.NewChatMember.Status == ChatMemberStatus.Member)
+                {
+                    // Bot was added or promoted
+                    await botClient.SendTextMessageAsync(
+                        myChatMember.Chat.Id, 
+                        "السلام عليكم! 🤖\nأنا بوت الورد اليومي للقرآن الكريم.\n\nللبدء، يجب على المشرف إعداد البوت باستخدام الأمر:\n/configure", 
+                        cancellationToken: cancellationToken);
+                }
+                return;
+            }
+
             if (update.Message is not { } message)
                 return;
             if (message.Text is not { } messageText)
@@ -69,7 +85,7 @@ namespace HelloLinux.Services
             
             if (messageText.StartsWith("/start"))
             {
-                await botClient.SendTextMessageAsync(chatId, "Welcome! Use /configure to set up prayer times for this group.", cancellationToken: cancellationToken);
+                await botClient.SendTextMessageAsync(chatId, "مرحباً! استخدم الأمر /configure لإعداد أوقات الصلاة لهذه المجموعة.", cancellationToken: cancellationToken);
                 return;
             }
 
@@ -109,7 +125,6 @@ namespace HelloLinux.Services
                     // Update member counts for all groups (this might be slow if many groups, but okay for now)
                     // Note: GetChatMemberCountAsync might hit rate limits if too many groups.
                     // For now, let's just report what we have or try to update a few.
-                    // To be safe, we will just sum up what we have in config, and maybe update on the fly?
                     // Updating on the fly for all groups is risky for rate limits.
                     // Let's just show the stored stats.
                     
@@ -133,10 +148,10 @@ namespace HelloLinux.Services
                     }
                     _storageService.SaveGroups(); // Save updated member counts
 
-                    string statsMsg = $"📊 **Bot Statistics**\n\n" +
-                                      $"Total Groups: {totalGroups}\n" +
-                                      $"Active Groups: {activeGroups}\n" +
-                                      $"Total Messages Sent: {totalMessages}\n";
+                    string statsMsg = $"📊 **إحصائيات البوت**\n\n" +
+                                      $"إجمالي المجموعات: {totalGroups}\n" +
+                                      $"المجموعات النشطة: {activeGroups}\n" +
+                                      $"إجمالي الرسائل المرسلة: {totalMessages}\n";
                                       
                     await botClient.SendTextMessageAsync(chatId, statsMsg, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
                     return;
@@ -147,7 +162,7 @@ namespace HelloLinux.Services
             {
                 if (!await IsAdminAsync(botClient, chatId, message.From.Id))
                 {
-                    await botClient.SendTextMessageAsync(chatId, "Only admins can configure the bot.", cancellationToken: cancellationToken);
+                    await botClient.SendTextMessageAsync(chatId, "عذراً، يمكن للمشرفين فقط إعداد البوت.", cancellationToken: cancellationToken);
                     return;
                 }
 
@@ -159,7 +174,7 @@ namespace HelloLinux.Services
                 _storageService.UpdateGroup(group);
 
                 _configState[chatId] = "WAITING_CITY";
-                await botClient.SendTextMessageAsync(chatId, "Please enter the City for prayer times:", cancellationToken: cancellationToken);
+                await botClient.SendTextMessageAsync(chatId, "الرجاء إدخال اسم المدينة لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
                 return;
             }
 
@@ -178,7 +193,7 @@ namespace HelloLinux.Services
                     group.City = messageText.Trim();
                     _storageService.UpdateGroup(group);
                     _configState[chatId] = "WAITING_COUNTRY";
-                    await botClient.SendTextMessageAsync(chatId, "Great! Now please enter the Country:", cancellationToken: cancellationToken);
+                    await botClient.SendTextMessageAsync(chatId, "ممتاز! الآن الرجاء إدخال اسم الدولة:", cancellationToken: cancellationToken);
                 }
                 else if (state == "WAITING_COUNTRY")
                 {
@@ -192,15 +207,15 @@ namespace HelloLinux.Services
                         _storageService.UpdateGroup(group);
                         _configState.Remove(chatId);
                         
-                        string msg = $"Configuration saved! Prayer times for {group.City}, {group.Country}:\n";
+                        string msg = $"تم حفظ الإعدادات! أوقات الصلاة لمدينة {group.City}, {group.Country}:\n";
                         foreach(var t in times) msg += $"{t.Key}: {t.Value}\n";
-                        msg += "\nThe bot will now send Quran pages at these times.";
+                        msg += "\nسيقوم البوت بإرسال صفحات القرآن في هذه الأوقات إن شاء الله.";
                         
                         await botClient.SendTextMessageAsync(chatId, msg, cancellationToken: cancellationToken);
                     }
                     else
                     {
-                        await botClient.SendTextMessageAsync(chatId, "Could not find prayer times for this location. Please try /configure again with correct City and Country.", cancellationToken: cancellationToken);
+                        await botClient.SendTextMessageAsync(chatId, "لم يتم العثور على أوقات الصلاة لهذا الموقع. الرجاء المحاولة مرة أخرى باستخدام /configure مع التأكد من صحة اسم المدينة والدولة.", cancellationToken: cancellationToken);
                         _configState.Remove(chatId);
                     }
                 }
@@ -214,15 +229,23 @@ namespace HelloLinux.Services
                 var chat = await botClient.GetChatAsync(chatId);
                 if (chat.Type == ChatType.Private) return true;
 
-                var admins = await botClient.GetChatAdministratorsAsync(chatId);
-                foreach (var admin in admins)
-                {
-                    if (admin.User.Id == userId) return true;
-                }
-                return false;
+                // Check specific member status
+                var member = await botClient.GetChatMemberAsync(chatId, userId);
+                return member.Status == ChatMemberStatus.Administrator || member.Status == ChatMemberStatus.Creator;
             }
             catch
             {
+                // Fallback to list check if direct check fails (though direct check is better)
+                try
+                {
+                    var admins = await botClient.GetChatAdministratorsAsync(chatId);
+                    foreach (var admin in admins)
+                    {
+                        if (admin.User.Id == userId) return true;
+                    }
+                }
+                catch { }
+                
                 return false;
             }
         }

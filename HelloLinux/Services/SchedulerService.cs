@@ -111,7 +111,7 @@ namespace HelloLinux.Services
                 if (pageNum > NumberPages) pageNum = 1; // Reset or handle khatma
 
                 var inputMedia = new InputMediaPhoto(InputFile.FromUri($"{BaseUrl}{pageNum}.png"));
-                if (i == 0) inputMedia.Caption = $"Wird for {prayerName}";
+                if (i == 0) inputMedia.Caption = $"ورد صلاة {prayerName} 📖";
                 media[i] = inputMedia;
             }
 
