@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  dailyquran-bot:
+    build:
+      context: ./HelloLinux
+      dockerfile: Dockerfile
+    image: dailyquran-bot:latest
+    container_name: dailyquran-bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+    volumes:
+      - ./data:/app/data
