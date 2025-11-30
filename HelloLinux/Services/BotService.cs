@@ -31,17 +31,17 @@ namespace HelloLinux.Services
         {
             var receiverOptions = new ReceiverOptions
             {
-                AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
+                AllowedUpdates = new [] { UpdateType.Message, UpdateType.MyChatMember, UpdateType.MessageReaction, UpdateType.ChannelPost } 
             };
 
             _botClient.StartReceiving(
                 updateHandler: HandleUpdateAsync,
-                pollingErrorHandler: HandlePollingErrorAsync,
+                errorHandler: HandlePollingErrorAsync,
                 receiverOptions: receiverOptions,
                 cancellationToken: CancellationToken.None
             );
 
-            var me = await _botClient.GetMeAsync();
+            var me = await _botClient.GetMe();
             _botId = me.Id;
             Console.WriteLine($"Start listening for @{me.Username}");
         }
@@ -50,6 +50,16 @@ namespace HelloLinux.Services
 
         private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
+            // Handle Message Reactions
+            if (update.Type == UpdateType.MessageReaction && update.MessageReaction != null)
+            {
+                var reaction = update.MessageReaction;
+                var g = _storageService.GetGroup(reaction.Chat.Id);
+                g.TotalReactions++;
+                _storageService.UpdateGroup(g);
+                return;
+            }
+
             // Handle Bot Added to Group
             if (update.Type == UpdateType.MyChatMember && update.MyChatMember != null)
             {
@@ -58,7 +68,7 @@ namespace HelloLinux.Services
                     myChatMember.NewChatMember.Status == ChatMemberStatus.Member)
                 {
                     // Bot was added or promoted
-                    await botClient.SendTextMessageAsync(
+                    await botClient.SendMessage(
                         myChatMember.Chat.Id, 
                         "السلام عليكم! 🤖\nأنا بوت الورد اليومي للقرآن الكريم.\n\nللبدء، يجب على المشرف إعداد البوت باستخدام الأمر:\n/configure", 
                         cancellationToken: cancellationToken);
@@ -66,12 +76,13 @@ namespace HelloLinux.Services
                 return;
             }
 
-            if (update.Message is not { } message)
+            var message = update.Message ?? update.ChannelPost;
+            if (message is not { } msg)
                 return;
-            if (message.Text is not { } messageText)
+            if (msg.Text is not { } messageText)
                 return;
 
-            var chatId = message.Chat.Id;
+            var chatId = msg.Chat.Id;
             var group = _storageService.GetGroup(chatId);
 
             // Only allow admins to configure (simple check: if private chat or if user is admin)
@@ -87,14 +98,15 @@ namespace HelloLinux.Services
             
             if (messageText.StartsWith("/start"))
             {
-                await botClient.SendTextMessageAsync(chatId, "مرحباً! استخدم الأمر /configure لإعداد أوقات الصلاة لهذه المجموعة.", cancellationToken: cancellationToken);
+                await botClient.SendMessage(chatId, "مرحباً! استخدم الأمر /configure لإعداد أوقات الصلاة لهذه المجموعة.", cancellationToken: cancellationToken);
                 return;
             }
 
             // Super Admin Commands
-            if (messageText.StartsWith("/see") || messageText.StartsWith("/stats"))
+            if (messageText.StartsWith("/see") || messageText.StartsWith("/stats") || messageText.StartsWith("/list"))
             {
-                if (message.From.Username != "djstackks")
+                var username = message.From?.Username;
+                if (username != "djstackks" && username != "moloko420")
                 {
                     // Ignore or say unauthorized
                     return;
@@ -108,11 +120,11 @@ namespace HelloLinux.Services
                     if (System.IO.File.Exists(filePath))
                     {
                         await using var stream = System.IO.File.OpenRead(filePath);
-                        await botClient.SendDocumentAsync(chatId, new InputFileStream(stream, "groups.json"), caption: "Here is the groups configuration file.", cancellationToken: cancellationToken);
+                        await botClient.SendDocument(chatId, new InputFileStream(stream, "groups.json"), caption: "Here is the groups configuration file.", cancellationToken: cancellationToken);
                     }
                     else
                     {
-                        await botClient.SendTextMessageAsync(chatId, "No groups.json file found.", cancellationToken: cancellationToken);
+                        await botClient.SendMessage(chatId, "No groups.json file found.", cancellationToken: cancellationToken);
                     }
                     return;
                 }
@@ -125,7 +137,7 @@ namespace HelloLinux.Services
                     long totalMessages = 0;
                     
                     // Update member counts for all groups (this might be slow if many groups, but okay for now)
-                    // Note: GetChatMemberCountAsync might hit rate limits if too many groups.
+                    // Note: GetChatMemberCount might hit rate limits if too many groups.
                     // For now, let's just report what we have or try to update a few.
                     // Updating on the fly for all groups is risky for rate limits.
                     // Let's just show the stored stats.
@@ -138,10 +150,10 @@ namespace HelloLinux.Services
                         try 
                         {
                             // Refresh metadata
-                            var chat = await botClient.GetChatAsync(g.ChatId, cancellationToken);
+                            var chat = await botClient.GetChat(g.ChatId, cancellationToken);
                             g.GroupName = chat.Title ?? "Unknown";
                             g.GroupLink = chat.Username != null ? $"https://t.me/{chat.Username}" : "";
-                            g.MemberCount = await botClient.GetChatMemberCountAsync(g.ChatId, cancellationToken);
+                            g.MemberCount = await botClient.GetChatMemberCount(g.ChatId, cancellationToken);
                         }
                         catch 
                         {
@@ -155,43 +167,95 @@ namespace HelloLinux.Services
                                       $"المجموعات النشطة: {activeGroups}\n" +
                                       $"إجمالي الرسائل المرسلة: {totalMessages}\n";
                                       
-                    await botClient.SendTextMessageAsync(chatId, statsMsg, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
+                    await botClient.SendMessage(chatId, statsMsg, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
+                    return;
+                }
+
+                if (messageText.StartsWith("/list"))
+                {
+                    var groups = _storageService.GetGroups();
+                    var report = new System.Text.StringBuilder();
+                    report.AppendLine("📋 **Groups Report**\n");
+
+                    foreach (var g in groups)
+                    {
+                        // Try to refresh info if possible (optional, might be slow)
+                        // For now, use stored info to be fast
+                        
+                        string subDate = g.SubscriptionDate == DateTime.MinValue ? "N/A" : g.SubscriptionDate.ToString("yyyy-MM-dd");
+                        string link = string.IsNullOrEmpty(g.GroupLink) ? "No Link" : g.GroupLink;
+                        string admin = string.IsNullOrEmpty(g.AdminUsername) ? $"ID: {g.AdminId}" : $"@{g.AdminUsername}";
+
+                        report.AppendLine($"🔹 **{g.GroupName}**");
+                        report.AppendLine($"   🔗 Link: {link}");
+                        report.AppendLine($"   👥 Members: {g.MemberCount}");
+                        report.AppendLine($"   📅 Sub Date: {subDate}");
+                        report.AppendLine($"   📍 Location: {g.City}, {g.Country}");
+                        report.AppendLine($"   👤 Admin: {admin}");
+                        report.AppendLine($"   📨 Msgs Sent: {g.MessagesSentCount}");
+                        report.AppendLine($"   👀 Views: N/A"); // Views not available for groups via API
+                        report.AppendLine($"   ❤️ Reactions: {g.TotalReactions}");
+                        report.AppendLine("-----------------------------------");
+                    }
+
+                    string finalMsg = report.ToString();
+                    
+                    if (finalMsg.Length > 4000)
+                    {
+                        // Split or send as file if too long
+                        // For simplicity, send as file
+                        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(finalMsg));
+                        await botClient.SendDocument(chatId, new InputFileStream(stream, "groups_report.txt"), caption: "Groups Report (Too long for message)", cancellationToken: cancellationToken);
+                    }
+                    else
+                    {
+                        await botClient.SendMessage(chatId, finalMsg, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
+                    }
                     return;
                 }
             }
 
             if (messageText.StartsWith("/configure"))
             {
-                if (!await IsAdminAsync(botClient, chatId, message.From.Id))
+                long userId = message.From?.Id ?? 0;
+                if (!await IsAdminAsync(botClient, chatId, userId))
                 {
-                    await botClient.SendTextMessageAsync(chatId, "عذراً، يمكن للمشرفين فقط إعداد البوت.", cancellationToken: cancellationToken);
+                    await botClient.SendMessage(chatId, "عذراً، يمكن للمشرفين فقط إعداد البوت.", cancellationToken: cancellationToken);
                     return;
                 }
 
                 // Capture group metadata
                 group.GroupName = message.Chat.Title ?? "Unknown";
                 group.GroupLink = message.Chat.Username != null ? $"https://t.me/{message.Chat.Username}" : "";
-                group.AdminUsername = message.From.Username ?? "";
-                group.AdminId = message.From.Id;
+                group.AdminUsername = message.From?.Username ?? "";
+                group.AdminId = userId;
                 _storageService.UpdateGroup(group);
 
                 _configState[chatId] = "WAITING_CITY";
-                await botClient.SendTextMessageAsync(chatId, "الرجاء الرد على هذه الرسالة باسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
+                await botClient.SendMessage(chatId, "الرجاء الرد على هذه الرسالة باسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
                 return;
             }
 
             if (_configState.ContainsKey(chatId))
             {
+                long userId = message.From?.Id ?? 0;
                 // Ensure only admin can continue the configuration
-                if (!await IsAdminAsync(botClient, chatId, message.From.Id))
+                if (!await IsAdminAsync(botClient, chatId, userId))
                 {
                     return;
                 }
 
                 // Enforce reply to bot
-                if (message.ReplyToMessage == null || message.ReplyToMessage.From.Id != _botId)
+                // In channels, From might be null. We just check if it's a reply.
+                if (message.ReplyToMessage == null)
                 {
                     return;
+                }
+                
+                // If From is present (Group/Private), ensure it matches Bot ID
+                if (message.ReplyToMessage.From != null && message.ReplyToMessage.From.Id != _botId)
+                {
+                   return;
                 }
 
                 string state = _configState[chatId];
@@ -200,7 +264,7 @@ namespace HelloLinux.Services
                     group.City = messageText.Trim();
                     _storageService.UpdateGroup(group);
                     _configState[chatId] = "WAITING_COUNTRY";
-                    await botClient.SendTextMessageAsync(chatId, "ممتاز! الآن الرجاء الرد على هذه الرسالة باسم الدولة (يفضل بالإنجليزية):", cancellationToken: cancellationToken);
+                    await botClient.SendMessage(chatId, "ممتاز! الآن الرجاء الرد على هذه الرسالة باسم الدولة (يفضل بالإنجليزية):", cancellationToken: cancellationToken);
                 }
                 else if (state == "WAITING_COUNTRY")
                 {
@@ -211,18 +275,19 @@ namespace HelloLinux.Services
                     if (times != null)
                     {
                         group.IsActive = true;
+                        group.SubscriptionDate = DateTime.Now; // Set subscription date
                         _storageService.UpdateGroup(group);
                         _configState.Remove(chatId);
                         
-                        string msg = $"تم حفظ الإعدادات! أوقات الصلاة لمدينة {group.City}, {group.Country}:\n";
-                        foreach(var t in times) msg += $"{t.Key}: {t.Value}\n";
-                        msg += "\nسيقوم البوت بإرسال صفحات القرآن في هذه الأوقات إن شاء الله.";
+                        string successMsg = $"تم حفظ الإعدادات! أوقات الصلاة لمدينة {group.City}, {group.Country}:\n";
+                        foreach(var t in times) successMsg += $"{t.Key}: {t.Value}\n";
+                        successMsg += "\nسيقوم البوت بإرسال صفحات القرآن في هذه الأوقات إن شاء الله.";
                         
-                        await botClient.SendTextMessageAsync(chatId, msg, cancellationToken: cancellationToken);
+                        await botClient.SendMessage(chatId, successMsg, cancellationToken: cancellationToken);
                     }
                     else
                     {
-                        await botClient.SendTextMessageAsync(chatId, "عذراً، لم يتم العثور على المدينة أو الدولة المحددة. الرجاء التأكد من صحة الإملاء (يفضل باللغة الإنجليزية) والمحاولة مرة أخرى باستخدام /configure.", cancellationToken: cancellationToken);
+                        await botClient.SendMessage(chatId, "عذراً، لم يتم العثور على المدينة أو الدولة المحددة. الرجاء التأكد من صحة الإملاء (يفضل باللغة الإنجليزية) والمحاولة مرة أخرى باستخدام /configure.", cancellationToken: cancellationToken);
                         _configState.Remove(chatId);
                     }
                 }
@@ -233,23 +298,26 @@ namespace HelloLinux.Services
         {
             // Check for Anonymous Admin (GroupAnonymousBot)
             if (userId == 1087968824) return true;
+            
+            // Channel Post (User ID is 0 or null source) - Only admins can post in channels
+            if (userId == 0) return true;
 
             try
             {
-                var chat = await botClient.GetChatAsync(chatId);
+                var chat = await botClient.GetChat(chatId);
                 if (chat.Type == ChatType.Private) return true;
 
                 // 1. Try GetChatMember
                 try 
                 {
-                    var member = await botClient.GetChatMemberAsync(chatId, userId);
+                    var member = await botClient.GetChatMember(chatId, userId);
                     if (member.Status == ChatMemberStatus.Administrator || member.Status == ChatMemberStatus.Creator)
                         return true;
                 }
                 catch { /* Ignore and try fallback */ }
 
                 // 2. Fallback to GetChatAdministrators (more reliable in some cases)
-                var admins = await botClient.GetChatAdministratorsAsync(chatId);
+                var admins = await botClient.GetChatAdministrators(chatId);
                 foreach (var admin in admins)
                 {
                     if (admin.User.Id == userId) return true;

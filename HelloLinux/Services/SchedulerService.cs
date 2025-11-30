@@ -170,11 +170,11 @@ namespace HelloLinux.Services
 
             try
             {
-                await bot.SendMediaGroupAsync(group.ChatId, media);
+                await bot.SendMediaGroup(group.ChatId, media);
                 
                 if (isKhatma)
                 {
-                    await bot.SendTextMessageAsync(group.ChatId, KhatmaDua);
+                    await bot.SendMessage(group.ChatId, KhatmaDua);
                 }
 
                 // Update group state
@@ -212,7 +212,7 @@ namespace HelloLinux.Services
                 {
                     await using var stream = System.IO.File.OpenRead(filePath);
                     string caption = imageName == "morning" ? "أذكار الصباح ☀️" : "أذكار المساء 🌙";
-                    await bot.SendPhotoAsync(chatId, new InputFileStream(stream, Path.GetFileName(filePath)), caption: caption);
+                    await bot.SendPhoto(chatId, new InputFileStream(stream, Path.GetFileName(filePath)), caption: caption);
                 }
                 catch (Exception ex)
                 {

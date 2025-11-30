@@ -19,5 +19,7 @@ namespace HelloLinux.Models
         public string GroupLink { get; set; } = string.Empty;
         public string AdminUsername { get; set; } = string.Empty;
         public long AdminId { get; set; } = 0;
+        public DateTime SubscriptionDate { get; set; } = DateTime.MinValue;
+        public long TotalReactions { get; set; } = 0;
     }
 }

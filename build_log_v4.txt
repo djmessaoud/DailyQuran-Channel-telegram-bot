@@ -1,0 +1,30 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(39,53): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(40,54): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(41,52): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(42,56): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(43,53): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/SchedulerService.cs(197,31): warning CS8600: Converting null literal or possible null value to non-nullable type. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(107,21): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(218,60): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(239,60): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(245,55): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+  HelloLinux -> /home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/bin/Debug/net8.0/HelloLinux.dll
+
+Build succeeded.
+
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(39,53): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(40,54): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(41,52): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(42,56): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/PrayerTimeService.cs(43,53): warning CS8604: Possible null reference argument for parameter 's' in 'TimeSpan TimeSpan.Parse(string s)'. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/SchedulerService.cs(197,31): warning CS8600: Converting null literal or possible null value to non-nullable type. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(107,21): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(218,60): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(239,60): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/Services/BotService.cs(245,55): warning CS8602: Dereference of a possibly null reference. [/home/c0pp3r/Coding/Learn/DailyQuran-Channel-telegram-bot/HelloLinux/HelloLinux.csproj]
+    10 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:00.98
