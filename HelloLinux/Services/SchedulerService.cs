@@ -134,6 +134,17 @@ namespace HelloLinux.Services
         private async Task SendWirdAsync(GroupConfig group, string prayerName)
         {
             var bot = _botService.GetClient();
+
+            // Send Adkhar if applicable
+            if (prayerName == "Fajr")
+            {
+                await SendAdkharImageAsync(bot, group.ChatId, "morning");
+            }
+            else if (prayerName == "Asr")
+            {
+                await SendAdkharImageAsync(bot, group.ChatId, "evening");
+            }
+
             var media = new IAlbumInputMedia[PagesPerPrayer];
             bool isKhatma = false;
             
@@ -142,7 +153,7 @@ namespace HelloLinux.Services
                 int pageNum = group.CurrentPage + i;
                 if (pageNum > NumberPages) pageNum = 1; // Should not happen in loop if we handle reset correctly, but safety check
 
-                // Check for Khatma (last page)
+                // Check for Khtama (last page)
                 if (pageNum == NumberPages)
                 {
                     isKhatma = true;
@@ -176,6 +187,37 @@ namespace HelloLinux.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to send to {group.ChatId}: {ex.Message}");
+            }
+        }
+
+        private async Task SendAdkharImageAsync(ITelegramBotClient bot, long chatId, string imageName)
+        {
+            string assetsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets");
+            string[] extensions = { ".jpg", ".jpeg", ".png" };
+            string filePath = null;
+
+            foreach (var ext in extensions)
+            {
+                var path = Path.Combine(assetsDir, imageName + ext);
+                if (System.IO.File.Exists(path))
+                {
+                    filePath = path;
+                    break;
+                }
+            }
+
+            if (filePath != null)
+            {
+                try
+                {
+                    await using var stream = System.IO.File.OpenRead(filePath);
+                    string caption = imageName == "morning" ? "أذكار الصباح ☀️" : "أذكار المساء 🌙";
+                    await bot.SendPhotoAsync(chatId, new InputFileStream(stream, Path.GetFileName(filePath)), caption: caption);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to send adkhar image to {chatId}: {ex.Message}");
+                }
             }
         }
     }
