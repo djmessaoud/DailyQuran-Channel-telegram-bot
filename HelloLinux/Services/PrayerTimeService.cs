@@ -27,7 +27,12 @@ namespace HelloLinux.Services
                 
                 if (root.GetProperty("code").GetInt32() == 200)
                 {
-                    var timings = root.GetProperty("data").GetProperty("timings");
+                    var data = root.GetProperty("data");
+                    // Aladhan API might return 200 even if city is approximated. 
+                    // However, usually if it completely fails to find it, it might return 404 or 400.
+                    // We will trust the code 200 for now, but ensure we return null if code is not 200.
+                    
+                    var timings = data.GetProperty("timings");
                     var result = new Dictionary<string, TimeSpan>();
 
                     // Map API keys to our internal keys
@@ -38,6 +43,11 @@ namespace HelloLinux.Services
                     result["Isha"] = TimeSpan.Parse(timings.GetProperty("Isha").GetString());
 
                     return result;
+                }
+                else
+                {
+                     Console.WriteLine($"API returned non-200 code: {root.GetProperty("code").GetInt32()} for {city}, {country}");
+                     return null;
                 }
             }
             catch (Exception ex)

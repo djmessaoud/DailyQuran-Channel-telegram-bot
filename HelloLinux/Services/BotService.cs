@@ -222,7 +222,7 @@ namespace HelloLinux.Services
                     }
                     else
                     {
-                        await botClient.SendTextMessageAsync(chatId, "لم يتم العثور على أوقات الصلاة لهذا الموقع. الرجاء المحاولة مرة أخرى باستخدام /configure مع التأكد من صحة اسم المدينة والدولة.", cancellationToken: cancellationToken);
+                        await botClient.SendTextMessageAsync(chatId, "عذراً، لم يتم العثور على المدينة أو الدولة المحددة. الرجاء التأكد من صحة الإملاء (يفضل باللغة الإنجليزية) والمحاولة مرة أخرى باستخدام /configure.", cancellationToken: cancellationToken);
                         _configState.Remove(chatId);
                     }
                 }
