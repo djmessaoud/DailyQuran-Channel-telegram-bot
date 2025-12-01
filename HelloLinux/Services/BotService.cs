@@ -60,18 +60,29 @@ namespace HelloLinux.Services
                 return;
             }
 
-            // Handle Bot Added to Group
+            // Handle Bot Added to Group or Channel
             if (update.Type == UpdateType.MyChatMember && update.MyChatMember != null)
             {
                 var myChatMember = update.MyChatMember;
+                
+                // Check if bot is added/promoted in a Group OR Channel
+                // In Channels, the bot is usually added as Administrator immediately.
                 if (myChatMember.NewChatMember.Status == ChatMemberStatus.Administrator || 
                     myChatMember.NewChatMember.Status == ChatMemberStatus.Member)
                 {
                     // Bot was added or promoted
-                    await botClient.SendMessage(
-                        myChatMember.Chat.Id, 
-                        "السلام عليكم! 🤖\nأنا بوت الورد اليومي للقرآن الكريم.\n\nللبدء، يجب على المشرف إعداد البوت باستخدام الأمر:\n/configure", 
-                        cancellationToken: cancellationToken);
+                    // We use a try-catch block to prevent the bot from crashing if it lacks permission to send messages immediately
+                    try 
+                    {
+                        await botClient.SendMessage(
+                            myChatMember.Chat.Id, 
+                            "السلام عليكم! 🤖\nأنا بوت الورد اليومي للقرآن الكريم.\n\nللبدء، يجب على المشرف إعداد البوت باستخدام الأمر:\n/configure", 
+                            cancellationToken: cancellationToken);
+                    }
+                    catch
+                    {
+                        // Silent failure if we can't send the welcome message (e.g. restrictions)
+                    }
                 }
                 return;
             }
@@ -85,16 +96,7 @@ namespace HelloLinux.Services
             var chatId = msg.Chat.Id;
             var group = _storageService.GetGroup(chatId);
 
-            // Only allow admins to configure (simple check: if private chat or if user is admin)
-            // For simplicity in this iteration, we assume private chat for configuration or public chat if user is admin.
-            // But the requirement says "he adds it to a telegram group... then he can configure... from telegram chat with the bot".
-            // So configuration happens in PRIVATE chat with the bot, targeting a specific group?
-            // Or configuration happens IN the group?
-            // User request: "he adds it to a telegram group where he is admin, then he can configure the city... and he can start it (all from telegram chat with the bot, using keyboard buttons)."
-            // This implies the interaction is likely in the private chat with the bot, selecting the group.
-            // However, to keep it simple first, let's support commands in the group itself if the user is an admin.
-            
-            // Let's support direct commands in the group for now as it's easier to link the context.
+            // Only allow admins to configure
             
             if (messageText.StartsWith("/start"))
             {
@@ -136,12 +138,6 @@ namespace HelloLinux.Services
                     int activeGroups = 0;
                     long totalMessages = 0;
                     
-                    // Update member counts for all groups (this might be slow if many groups, but okay for now)
-                    // Note: GetChatMemberCount might hit rate limits if too many groups.
-                    // For now, let's just report what we have or try to update a few.
-                    // Updating on the fly for all groups is risky for rate limits.
-                    // Let's just show the stored stats.
-                    
                     foreach (var g in groups)
                     {
                         if (g.IsActive) activeGroups++;
@@ -179,9 +175,6 @@ namespace HelloLinux.Services
 
                     foreach (var g in groups)
                     {
-                        // Try to refresh info if possible (optional, might be slow)
-                        // For now, use stored info to be fast
-                        
                         string subDate = g.SubscriptionDate == DateTime.MinValue ? "N/A" : g.SubscriptionDate.ToString("yyyy-MM-dd");
                         string link = string.IsNullOrEmpty(g.GroupLink) ? "No Link" : g.GroupLink;
                         string admin = string.IsNullOrEmpty(g.AdminUsername) ? $"ID: {g.AdminId}" : $"@{g.AdminUsername}";
@@ -202,8 +195,6 @@ namespace HelloLinux.Services
                     
                     if (finalMsg.Length > 4000)
                     {
-                        // Split or send as file if too long
-                        // For simplicity, send as file
                         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(finalMsg));
                         await botClient.SendDocument(chatId, new InputFileStream(stream, "groups_report.txt"), caption: "Groups Report (Too long for message)", cancellationToken: cancellationToken);
                     }
@@ -227,8 +218,19 @@ namespace HelloLinux.Services
                 // Capture group metadata
                 group.GroupName = message.Chat.Title ?? "Unknown";
                 group.GroupLink = message.Chat.Username != null ? $"https://t.me/{message.Chat.Username}" : "";
-                group.AdminUsername = message.From?.Username ?? "";
-                group.AdminId = userId;
+                
+                // For Channels, From is null.
+                if (message.From != null)
+                {
+                    group.AdminUsername = message.From.Username ?? "";
+                    group.AdminId = userId;
+                }
+                else
+                {
+                    // Channel Post: We don't have a specific admin user ID, but we know it's an admin action.
+                    if (group.AdminId == 0) group.AdminId = 0; 
+                }
+                
                 _storageService.UpdateGroup(group);
 
                 _configState[chatId] = "WAITING_CITY";
@@ -246,13 +248,13 @@ namespace HelloLinux.Services
                 }
 
                 // Enforce reply to bot
-                // In channels, From might be null. We just check if it's a reply.
                 if (message.ReplyToMessage == null)
                 {
                     return;
                 }
                 
                 // If From is present (Group/Private), ensure it matches Bot ID
+                // In Channels, ReplyToMessage.From is the Bot if replying to the Bot's message.
                 if (message.ReplyToMessage.From != null && message.ReplyToMessage.From.Id != _botId)
                 {
                    return;
