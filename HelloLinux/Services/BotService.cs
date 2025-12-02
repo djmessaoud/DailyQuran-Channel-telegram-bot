@@ -65,13 +65,19 @@ namespace HelloLinux.Services
             {
                 var myChatMember = update.MyChatMember;
                 
-                // Check if bot is added/promoted in a Group OR Channel
-                // In Channels, the bot is usually added as Administrator immediately.
-                if (myChatMember.NewChatMember.Status == ChatMemberStatus.Administrator || 
-                    myChatMember.NewChatMember.Status == ChatMemberStatus.Member)
+                // Check if this is a NEW addition (not just a permission change)
+                // Old status should be Left, Kicked, or Restricted
+                var wasNotMember = myChatMember.OldChatMember.Status == ChatMemberStatus.Left ||
+                                   myChatMember.OldChatMember.Status == ChatMemberStatus.Kicked ||
+                                   myChatMember.OldChatMember.Status == ChatMemberStatus.Restricted;
+                
+                // New status should be Member or Administrator
+                var isNowMember = myChatMember.NewChatMember.Status == ChatMemberStatus.Administrator || 
+                                  myChatMember.NewChatMember.Status == ChatMemberStatus.Member;
+                
+                // Only send welcome if bot was just added (not already a member)
+                if (wasNotMember && isNowMember)
                 {
-                    // Bot was added or promoted
-                    // We use a try-catch block to prevent the bot from crashing if it lacks permission to send messages immediately
                     try 
                     {
                         await botClient.SendMessage(
@@ -81,7 +87,7 @@ namespace HelloLinux.Services
                     }
                     catch
                     {
-                        // Silent failure if we can't send the welcome message (e.g. restrictions)
+                        // Silent failure - bot might not have Post Messages permission in channel yet
                     }
                 }
                 return;
