@@ -136,13 +136,21 @@ namespace HelloLinux.Services
             var bot = _botService.GetClient();
 
             // Send Adkhar if applicable
+            Console.WriteLine($"[DEBUG] SendWirdAsync called for prayer: '{prayerName}' (ChatId: {group.ChatId})");
+
             if (prayerName == "Fajr")
             {
+                Console.WriteLine("[DEBUG] Prayer is Fajr - sending morning adkhar");
                 await SendAdkharImageAsync(bot, group.ChatId, "morning");
             }
             else if (prayerName == "Asr")
             {
+                Console.WriteLine("[DEBUG] Prayer is Asr - sending evening adkhar");
                 await SendAdkharImageAsync(bot, group.ChatId, "evening");
+            }
+            else
+            {
+                Console.WriteLine($"[DEBUG] Prayer '{prayerName}' does not require adkhar (not Fajr or Asr)");
             }
 
             var media = new IAlbumInputMedia[PagesPerPrayer];
@@ -193,15 +201,27 @@ namespace HelloLinux.Services
         private async Task SendAdkharImageAsync(ITelegramBotClient bot, long chatId, string imageName)
         {
             string assetsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets");
+            Console.WriteLine($"[DEBUG] Looking for adkhar image '{imageName}' in directory: {assetsDir}");
+            Console.WriteLine($"[DEBUG] Base directory: {AppDomain.CurrentDomain.BaseDirectory}");
+            Console.WriteLine($"[DEBUG] Directory exists: {Directory.Exists(assetsDir)}");
+
+            if (Directory.Exists(assetsDir))
+            {
+                var files = Directory.GetFiles(assetsDir);
+                Console.WriteLine($"[DEBUG] Files in Assets directory: {string.Join(", ", files.Select(Path.GetFileName))}");
+            }
+
             string[] extensions = { ".jpg", ".jpeg", ".png" };
             string filePath = null;
 
             foreach (var ext in extensions)
             {
                 var path = Path.Combine(assetsDir, imageName + ext);
+                Console.WriteLine($"[DEBUG] Checking path: {path}");
                 if (System.IO.File.Exists(path))
                 {
                     filePath = path;
+                    Console.WriteLine($"[DEBUG] Found file: {filePath}");
                     break;
                 }
             }
@@ -210,14 +230,23 @@ namespace HelloLinux.Services
             {
                 try
                 {
+                    Console.WriteLine($"[DEBUG] Attempting to send adkhar image from: {filePath}");
                     await using var stream = System.IO.File.OpenRead(filePath);
+                    Console.WriteLine($"[DEBUG] File stream opened successfully, size: {stream.Length} bytes");
                     string caption = imageName == "morning" ? "أذكار الصباح ☀️" : "أذكار المساء 🌙";
                     await bot.SendPhoto(chatId, new InputFileStream(stream, Path.GetFileName(filePath)), caption: caption);
+                    Console.WriteLine($"✓ Successfully sent {imageName} adkhar image to {chatId}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to send adkhar image to {chatId}: {ex.Message}");
+                    Console.WriteLine($"✗ Failed to send adkhar image to {chatId}");
+                    Console.WriteLine($"  Error: {ex.Message}");
+                    Console.WriteLine($"  Stack trace: {ex.StackTrace}");
                 }
+            }
+            else
+            {
+                Console.WriteLine($"✗ Adkhar image '{imageName}' not found in directory: {assetsDir}");
             }
         }
     }
