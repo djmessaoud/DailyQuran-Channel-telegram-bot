@@ -8,6 +8,7 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 using HelloLinux.Models;
 
 namespace HelloLinux.Services
@@ -18,6 +19,7 @@ namespace HelloLinux.Services
         private readonly StorageService _storageService;
         private readonly PrayerTimeService _prayerTimeService;
         private readonly Dictionary<long, string> _configState = new Dictionary<long, string>(); // ChatId -> State
+        private readonly HashSet<long> _superAdminIdsSetup = new HashSet<long>(); // Track which super admins have commands set
         private long _botId;
 
         public BotService(string token, StorageService storageService, PrayerTimeService prayerTimeService)
@@ -31,7 +33,7 @@ namespace HelloLinux.Services
         {
             var receiverOptions = new ReceiverOptions
             {
-                AllowedUpdates = new [] { UpdateType.Message, UpdateType.MyChatMember, UpdateType.MessageReaction, UpdateType.ChannelPost } 
+                AllowedUpdates = new [] { UpdateType.Message, UpdateType.MyChatMember, UpdateType.MessageReaction, UpdateType.ChannelPost, UpdateType.CallbackQuery }
             };
 
             _botClient.StartReceiving(
@@ -44,9 +46,61 @@ namespace HelloLinux.Services
             var me = await _botClient.GetMe();
             _botId = me.Id;
             Console.WriteLine($"Start listening for @{me.Username}");
+
+            // Set up bot commands menu for all users
+            await SetupBotCommands();
         }
 
         public TelegramBotClient GetClient() => _botClient;
+
+        private async Task SetupBotCommands()
+        {
+            // Commands for all users (default scope)
+            var defaultCommands = new[]
+            {
+                new BotCommand { Command = "start", Description = "بدء استخدام البوت - Start using the bot" },
+                new BotCommand { Command = "configure", Description = "إعداد أوقات الصلاة - Configure prayer times" }
+            };
+
+            await _botClient.SetMyCommands(defaultCommands, scope: new BotCommandScopeDefault(), cancellationToken: CancellationToken.None);
+            Console.WriteLine("✅ Bot commands menu configured for all users");
+        }
+
+        private async Task SetupSuperAdminCommands(long userId)
+        {
+            // Prevent setting up multiple times
+            if (_superAdminIdsSetup.Contains(userId))
+                return;
+
+            try
+            {
+                // Super admin commands (shown in their personal chat menu)
+                var adminCommands = new[]
+                {
+                    new BotCommand { Command = "start", Description = "بدء استخدام البوت - Start the bot" },
+                    new BotCommand { Command = "configure", Description = "إعداد أوقات الصلاة - Configure prayer times" },
+                    new BotCommand { Command = "admin", Description = "قائمة أوامر المشرف - Super admin menu" },
+                    new BotCommand { Command = "stats", Description = "إحصائيات البوت - Bot statistics" },
+                    new BotCommand { Command = "list", Description = "قائمة المجموعات - Groups list" },
+                    new BotCommand { Command = "see", Description = "تحميل الملف - Download groups.json" },
+                    new BotCommand { Command = "send", Description = "إرسال لجميع - Broadcast to all" },
+                    new BotCommand { Command = "send_inactive", Description = "إرسال للغير نشطين - Send to inactive" }
+                };
+
+                await _botClient.SetMyCommands(
+                    adminCommands,
+                    scope: new BotCommandScopeChat { ChatId = userId },
+                    cancellationToken: CancellationToken.None
+                );
+
+                _superAdminIdsSetup.Add(userId);
+                Console.WriteLine($"✅ Super admin commands configured for user {userId}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to set super admin commands: {ex.Message}");
+            }
+        }
 
         private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
         {
@@ -57,6 +111,134 @@ namespace HelloLinux.Services
                 var g = _storageService.GetGroup(reaction.Chat.Id);
                 g.TotalReactions++;
                 _storageService.UpdateGroup(g);
+                return;
+            }
+
+            // Handle Callback Queries (Button Clicks)
+            if (update.Type == UpdateType.CallbackQuery && update.CallbackQuery != null)
+            {
+                var callbackQuery = update.CallbackQuery;
+                var callbackChatId = callbackQuery.Message!.Chat.Id;
+                var username = callbackQuery.From?.Username;
+
+                if (callbackQuery.Data == "configure_city")
+                {
+                    // Answer callback to remove loading state
+                    await botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
+
+                    // Start configuration process
+                    var callbackGroup = _storageService.GetGroup(callbackChatId);
+                    var userId = callbackQuery.From.Id;
+
+                    // Capture user metadata
+                    callbackGroup.AdminUsername = callbackQuery.From.Username ?? "";
+                    callbackGroup.AdminId = userId;
+                    _storageService.UpdateGroup(callbackGroup);
+
+                    _configState[callbackChatId] = "WAITING_CITY";
+                    await botClient.SendMessage(callbackChatId, "الرجاء الرد على هذه الرسالة باسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
+                }
+                // Handle super admin buttons
+                else if (username == "djstackks" || username == "moloko420")
+                {
+                    await botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
+
+                    if (callbackQuery.Data == "admin_stats")
+                    {
+                        var groups = _storageService.GetGroups();
+                        int totalGroups = groups.Count;
+                        int activeGroups = 0;
+                        long totalMessages = 0;
+
+                        foreach (var g in groups)
+                        {
+                            if (g.IsActive) activeGroups++;
+                            totalMessages += g.MessagesSentCount;
+
+                            try
+                            {
+                                // Refresh metadata
+                                var chat = await botClient.GetChat(g.ChatId, cancellationToken);
+                                g.GroupName = chat.Title ?? "Unknown";
+                                g.GroupLink = chat.Username != null ? $"https://t.me/{chat.Username}" : "";
+                                g.MemberCount = await botClient.GetChatMemberCount(g.ChatId, cancellationToken);
+                            }
+                            catch
+                            {
+                                // Ignore errors (e.g. bot kicked)
+                            }
+                        }
+                        _storageService.SaveGroups(); // Save updated member counts
+
+                        string statsMsg = $"📊 **إحصائيات البوت**\n\n" +
+                                          $"إجمالي المجموعات: {totalGroups}\n" +
+                                          $"المجموعات النشطة: {activeGroups}\n" +
+                                          $"إجمالي الرسائل المرسلة: {totalMessages}\n";
+
+                        await botClient.SendMessage(callbackChatId, statsMsg, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
+                    }
+                    else if (callbackQuery.Data == "admin_list")
+                    {
+                        var groups = _storageService.GetGroups();
+                        var report = new System.Text.StringBuilder();
+                        report.AppendLine("📋 **Groups Report**\n");
+
+                        foreach (var g in groups)
+                        {
+                            string subDate = g.SubscriptionDate == DateTime.MinValue ? "N/A" : g.SubscriptionDate.ToString("yyyy-MM-dd");
+                            string link = string.IsNullOrEmpty(g.GroupLink) ? "No Link" : g.GroupLink;
+                            string admin = string.IsNullOrEmpty(g.AdminUsername) ? $"ID: {g.AdminId}" : $"@{g.AdminUsername}";
+
+                            report.AppendLine($"🔹 **{g.GroupName}**");
+                            report.AppendLine($"   🔗 Link: {link}");
+                            report.AppendLine($"   👥 Members: {g.MemberCount}");
+                            report.AppendLine($"   📅 Sub Date: {subDate}");
+                            report.AppendLine($"   📍 Location: {g.City}, {g.Country}");
+                            report.AppendLine($"   👤 Admin: {admin}");
+                            report.AppendLine($"   📨 Msgs Sent: {g.MessagesSentCount}");
+                            report.AppendLine($"   ❤️ Reactions: {g.TotalReactions}");
+                            report.AppendLine("-----------------------------------");
+                        }
+
+                        string finalMsg = report.ToString();
+
+                        if (finalMsg.Length > 4000)
+                        {
+                            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(finalMsg));
+                            await botClient.SendDocument(callbackChatId, new InputFileStream(stream, "groups_report.txt"), caption: "Groups Report (Too long for message)", cancellationToken: cancellationToken);
+                        }
+                        else
+                        {
+                            await botClient.SendMessage(callbackChatId, finalMsg, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
+                        }
+                    }
+                    else if (callbackQuery.Data == "admin_see")
+                    {
+                        string dataDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
+                        string filePath = Path.Combine(dataDir, "groups.json");
+
+                        if (System.IO.File.Exists(filePath))
+                        {
+                            await using var stream = System.IO.File.OpenRead(filePath);
+                            await botClient.SendDocument(callbackChatId, new InputFileStream(stream, "groups.json"), caption: "Here is the groups configuration file.", cancellationToken: cancellationToken);
+                        }
+                        else
+                        {
+                            await botClient.SendMessage(callbackChatId, "No groups.json file found.", cancellationToken: cancellationToken);
+                        }
+                    }
+                    else if (callbackQuery.Data == "admin_send")
+                    {
+                        await botClient.SendMessage(callbackChatId,
+                            "📢 **Broadcast Message**\n\n" +
+                            "To send a message to all users, groups, and channels:\n" +
+                            "`/send \"Your message here\"`\n\n" +
+                            "To send only to inactive users/groups:\n" +
+                            "`/send_inactive \"Your message here\"`",
+                            parseMode: ParseMode.Markdown,
+                            cancellationToken: cancellationToken);
+                    }
+                }
                 return;
             }
 
@@ -106,18 +288,46 @@ namespace HelloLinux.Services
             
             if (messageText.StartsWith("/start"))
             {
-                await botClient.SendMessage(chatId, "مرحباً! استخدم الأمر /configure لإعداد أوقات الصلاة لهذه المجموعة.", cancellationToken: cancellationToken);
+                var chat = await botClient.GetChat(chatId, cancellationToken);
+
+                // Check if this is a private chat with an inactive user
+                if (chat.Type == ChatType.Private && !group.IsActive)
+                {
+                    var keyboard = new InlineKeyboardMarkup(new[]
+                    {
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("⚙️ إعداد المدينة لأوقات الصلاة", "configure_city")
+                        }
+                    });
+
+                    await botClient.SendMessage(chatId,
+                        "مرحباً! 👋\n\nلاستقبال الورد اليومي من القرآن الكريم، يجب عليك إعداد مدينتك أولاً لحساب أوقات الصلاة.\n\nاضغط على الزر أدناه للبدء:",
+                        replyMarkup: keyboard,
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    await botClient.SendMessage(chatId, "مرحباً! استخدم الأمر /configure لإعداد أوقات الصلاة لهذه المجموعة.", cancellationToken: cancellationToken);
+                }
                 return;
             }
 
             // Super Admin Commands
-            if (messageText.StartsWith("/see") || messageText.StartsWith("/stats") || messageText.StartsWith("/list"))
+            if (messageText.StartsWith("/see") || messageText.StartsWith("/stats") || messageText.StartsWith("/list") ||
+                messageText.StartsWith("/send") || messageText.StartsWith("/admin"))
             {
                 var username = message.From?.Username;
                 if (username != "djstackks" && username != "moloko420")
                 {
                     // Ignore or say unauthorized
                     return;
+                }
+
+                // Set up super admin commands menu for this user (first time only)
+                if (message.From != null)
+                {
+                    await SetupSuperAdminCommands(message.From.Id);
                 }
 
                 if (messageText.StartsWith("/see"))
@@ -198,7 +408,7 @@ namespace HelloLinux.Services
                     }
 
                     string finalMsg = report.ToString();
-                    
+
                     if (finalMsg.Length > 4000)
                     {
                         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(finalMsg));
@@ -208,6 +418,128 @@ namespace HelloLinux.Services
                     {
                         await botClient.SendMessage(chatId, finalMsg, parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
                     }
+                    return;
+                }
+
+                if (messageText.StartsWith("/send ") && !messageText.StartsWith("/send_inactive"))
+                {
+                    // Extract message after "/send "
+                    string broadcastMsg = messageText.Substring(6).Trim();
+
+                    if (string.IsNullOrEmpty(broadcastMsg))
+                    {
+                        await botClient.SendMessage(chatId, "❌ Usage: /send \"Your message here\"", cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    // Remove quotes if present
+                    if (broadcastMsg.StartsWith("\"") && broadcastMsg.EndsWith("\""))
+                    {
+                        broadcastMsg = broadcastMsg.Substring(1, broadcastMsg.Length - 2);
+                    }
+
+                    var groups = _storageService.GetGroups();
+                    int successCount = 0;
+                    int failCount = 0;
+
+                    await botClient.SendMessage(chatId, $"📢 Starting broadcast to {groups.Count} chats...", cancellationToken: cancellationToken);
+
+                    foreach (var g in groups)
+                    {
+                        try
+                        {
+                            await botClient.SendMessage(g.ChatId, broadcastMsg, cancellationToken: cancellationToken);
+                            successCount++;
+                            await Task.Delay(100); // Prevent rate limiting
+                        }
+                        catch (Exception ex)
+                        {
+                            failCount++;
+                            Console.WriteLine($"Failed to send to {g.ChatId}: {ex.Message}");
+                        }
+                    }
+
+                    await botClient.SendMessage(chatId,
+                        $"✅ Broadcast complete!\n\n✔️ Sent: {successCount}\n❌ Failed: {failCount}",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                if (messageText.StartsWith("/send_inactive "))
+                {
+                    // Extract message after "/send_inactive "
+                    string broadcastMsg = messageText.Substring(15).Trim();
+
+                    if (string.IsNullOrEmpty(broadcastMsg))
+                    {
+                        await botClient.SendMessage(chatId, "❌ Usage: /send_inactive \"Your message here\"", cancellationToken: cancellationToken);
+                        return;
+                    }
+
+                    // Remove quotes if present
+                    if (broadcastMsg.StartsWith("\"") && broadcastMsg.EndsWith("\""))
+                    {
+                        broadcastMsg = broadcastMsg.Substring(1, broadcastMsg.Length - 2);
+                    }
+
+                    var groups = _storageService.GetGroups();
+                    var inactiveGroups = groups.FindAll(g => !g.IsActive);
+                    int successCount = 0;
+                    int failCount = 0;
+
+                    await botClient.SendMessage(chatId, $"📢 Starting broadcast to {inactiveGroups.Count} inactive chats...", cancellationToken: cancellationToken);
+
+                    foreach (var g in inactiveGroups)
+                    {
+                        try
+                        {
+                            await botClient.SendMessage(g.ChatId, broadcastMsg, cancellationToken: cancellationToken);
+                            successCount++;
+                            await Task.Delay(100); // Prevent rate limiting
+                        }
+                        catch (Exception ex)
+                        {
+                            failCount++;
+                            Console.WriteLine($"Failed to send to {g.ChatId}: {ex.Message}");
+                        }
+                    }
+
+                    await botClient.SendMessage(chatId,
+                        $"✅ Broadcast to inactive chats complete!\n\n✔️ Sent: {successCount}\n❌ Failed: {failCount}",
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                if (messageText.StartsWith("/admin"))
+                {
+                    var keyboard = new InlineKeyboardMarkup(new[]
+                    {
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("📊 إحصائيات | Stats", "admin_stats"),
+                            InlineKeyboardButton.WithCallbackData("📋 قائمة | List", "admin_list")
+                        },
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("📥 تحميل | Download", "admin_see"),
+                            InlineKeyboardButton.WithCallbackData("📢 إرسال | Broadcast", "admin_send")
+                        }
+                    });
+
+                    string adminMenu = "👤 **Super Admin Commands**\n\n" +
+                                      "**Available Commands:**\n\n" +
+                                      "• `/stats` - View bot statistics (total groups, active groups, messages sent)\n" +
+                                      "• `/list` - Detailed report of all groups with metadata\n" +
+                                      "• `/see` - Download groups.json configuration file\n" +
+                                      "• `/send \"message\"` - Broadcast message to ALL users, groups, and channels\n" +
+                                      "• `/send_inactive \"message\"` - Send message to inactive users/groups only\n" +
+                                      "• `/admin` - Show this menu\n\n" +
+                                      "**Quick Access Buttons:**";
+
+                    await botClient.SendMessage(chatId, adminMenu,
+                        parseMode: ParseMode.Markdown,
+                        replyMarkup: keyboard,
+                        cancellationToken: cancellationToken);
                     return;
                 }
             }
