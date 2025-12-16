@@ -136,7 +136,7 @@ namespace HelloLinux.Services
                     _storageService.UpdateGroup(callbackGroup);
 
                     _configState[callbackChatId] = "WAITING_CITY";
-                    await botClient.SendMessage(callbackChatId, "الرجاء الرد على هذه الرسالة باسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
+                    await botClient.SendMessage(callbackChatId, "الرجاء إرسال اسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
                 }
                 // Handle super admin buttons
                 else if (username == "djstackks" || username == "moloko420")
@@ -234,7 +234,10 @@ namespace HelloLinux.Services
                             "To send a message to all users, groups, and channels:\n" +
                             "`/send \"Your message here\"`\n\n" +
                             "To send only to inactive users/groups:\n" +
-                            "`/send_inactive \"Your message here\"`",
+                            "`/send_inactive \"Your message here\"`\n\n" +
+                            "💡 **Tip for inactive users:** Include this in your message:\n" +
+                            "• Mention the `/configure` command in Arabic: اضغط على كلمة \"configure\" من القائمة\n" +
+                            "• Include instructions link: https://telegra.ph/quran-how-12-16",
                             parseMode: ParseMode.Markdown,
                             cancellationToken: cancellationToken);
                     }
@@ -532,7 +535,7 @@ namespace HelloLinux.Services
                                       "• `/list` - Detailed report of all groups with metadata\n" +
                                       "• `/see` - Download groups.json configuration file\n" +
                                       "• `/send \"message\"` - Broadcast message to ALL users, groups, and channels\n" +
-                                      "• `/send_inactive \"message\"` - Send message to inactive users/groups only\n" +
+                                      "• `/send_inactive \"message\"` - Send to inactive users (include: `/configure` + https://telegra.ph/quran-how-12-16)\n" +
                                       "• `/admin` - Show this menu\n\n" +
                                       "**Quick Access Buttons:**";
 
@@ -572,7 +575,7 @@ namespace HelloLinux.Services
                 _storageService.UpdateGroup(group);
 
                 _configState[chatId] = "WAITING_CITY";
-                await botClient.SendMessage(chatId, "الرجاء الرد على هذه الرسالة باسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
+                await botClient.SendMessage(chatId, "الرجاء إرسال اسم المدينة (يفضل بالإنجليزية للدقة) لحساب أوقات الصلاة:", cancellationToken: cancellationToken);
                 return;
             }
 
@@ -585,26 +588,13 @@ namespace HelloLinux.Services
                     return;
                 }
 
-                // Enforce reply to bot
-                if (message.ReplyToMessage == null)
-                {
-                    return;
-                }
-                
-                // If From is present (Group/Private), ensure it matches Bot ID
-                // In Channels, ReplyToMessage.From is the Bot if replying to the Bot's message.
-                if (message.ReplyToMessage.From != null && message.ReplyToMessage.From.Id != _botId)
-                {
-                   return;
-                }
-
                 string state = _configState[chatId];
                 if (state == "WAITING_CITY")
                 {
                     group.City = messageText.Trim();
                     _storageService.UpdateGroup(group);
                     _configState[chatId] = "WAITING_COUNTRY";
-                    await botClient.SendMessage(chatId, "ممتاز! الآن الرجاء الرد على هذه الرسالة باسم الدولة (يفضل بالإنجليزية):", cancellationToken: cancellationToken);
+                    await botClient.SendMessage(chatId, "ممتاز! الآن الرجاء إرسال اسم الدولة (يفضل بالإنجليزية):", cancellationToken: cancellationToken);
                 }
                 else if (state == "WAITING_COUNTRY")
                 {
@@ -627,7 +617,24 @@ namespace HelloLinux.Services
                     }
                     else
                     {
-                        await botClient.SendMessage(chatId, "عذراً، لم يتم العثور على المدينة أو الدولة المحددة. الرجاء التأكد من صحة الإملاء (يفضل باللغة الإنجليزية) والمحاولة مرة أخرى باستخدام /configure.", cancellationToken: cancellationToken);
+                        var retryKeyboard = new InlineKeyboardMarkup(new[]
+                        {
+                            new[]
+                            {
+                                InlineKeyboardButton.WithCallbackData("⚙️ إعداد المدينة مرة أخرى", "configure_city")
+                            }
+                        });
+
+                        await botClient.SendMessage(chatId,
+                            "⚠️ عذراً، لم يتم العثور على المدينة أو الدولة المحددة.\n\n" +
+                            "💡 نصائح:\n" +
+                            "• حاول كتابة اسم المدينة بطريقة مختلفة\n" +
+                            "• استخدم اللغة الإنجليزية للحصول على نتائج أفضل\n" +
+                            "• تأكد من صحة الإملاء\n\n" +
+                            "إذا استمرت المشكلة، يمكنك التواصل معنا: @moloko420\n\n" +
+                            "للمحاولة مرة أخرى، اضغط على الزر أدناه:",
+                            replyMarkup: retryKeyboard,
+                            cancellationToken: cancellationToken);
                         _configState.Remove(chatId);
                     }
                 }
