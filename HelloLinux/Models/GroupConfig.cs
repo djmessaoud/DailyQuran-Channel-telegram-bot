@@ -13,6 +13,7 @@ namespace HelloLinux.Models
         public DateTime? LastPrayerTime { get; set; } // To track if we already sent for this time
         public DateTime LastUpdatedDate { get; set; } = DateTime.MinValue;
         public Dictionary<string, TimeSpan> TodayPrayerTimes { get; set; } = new Dictionary<string, TimeSpan>();
+        public string TimeZoneId { get; set; } = "UTC";
         public long MessagesSentCount { get; set; } = 0;
         public int MemberCount { get; set; } = 0;
         public string GroupName { get; set; } = string.Empty;

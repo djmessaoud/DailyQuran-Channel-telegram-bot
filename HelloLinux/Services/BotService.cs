@@ -601,16 +601,18 @@ namespace HelloLinux.Services
                     group.Country = messageText.Trim();
                     
                     // Verify
-                    var times = await _prayerTimeService.GetPrayerTimesAsync(group.City, group.Country);
-                    if (times != null)
+                    var result = await _prayerTimeService.GetPrayerTimesAsync(group.City, group.Country);
+                    if (result != null)
                     {
                         group.IsActive = true;
-                        group.SubscriptionDate = DateTime.Now; // Set subscription date
+                        group.TimeZoneId = result.Value.TimeZoneId;
+                        group.TodayPrayerTimes = result.Value.Times;
+                        group.SubscriptionDate = DateTime.UtcNow;
                         _storageService.UpdateGroup(group);
                         _configState.Remove(chatId);
-                        
+
                         string successMsg = $"تم حفظ الإعدادات! أوقات الصلاة لمدينة {group.City}, {group.Country}:\n";
-                        foreach(var t in times) successMsg += $"{t.Key}: {t.Value}\n";
+                        foreach(var t in result.Value.Times) successMsg += $"{t.Key}: {t.Value}\n";
                         successMsg += "\nسيقوم البوت بإرسال صفحات القرآن في هذه الأوقات إن شاء الله.";
                         
                         await botClient.SendMessage(chatId, successMsg, cancellationToken: cancellationToken);

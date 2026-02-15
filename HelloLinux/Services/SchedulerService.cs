@@ -43,46 +43,55 @@ namespace HelloLinux.Services
             {
                 try
                 {
-                    var now = DateTime.Now;
+                    var utcNow = DateTime.UtcNow;
                     var groups = _storageService.GetGroups();
 
                     foreach (var group in groups)
                     {
                         if (!group.IsActive) continue;
 
-                        // Update prayer times if needed (new day)
-                        if (group.LastUpdatedDate.Date != now.Date)
+                        // Convert current UTC time to the city's local time
+                        TimeZoneInfo cityTz;
+                        try
                         {
-                            var times = await _prayerTimeService.GetPrayerTimesAsync(group.City, group.Country);
-                            if (times != null)
+                            cityTz = TimeZoneInfo.FindSystemTimeZoneById(group.TimeZoneId);
+                        }
+                        catch
+                        {
+                            Console.WriteLine($"Unknown timezone '{group.TimeZoneId}' for group {group.ChatId}, skipping");
+                            continue;
+                        }
+                        var cityNow = TimeZoneInfo.ConvertTimeFromUtc(utcNow, cityTz);
+
+                        // Update prayer times if needed (new day in the city's timezone)
+                        if (group.LastUpdatedDate.Date != cityNow.Date)
+                        {
+                            var result = await _prayerTimeService.GetPrayerTimesAsync(group.City, group.Country);
+                            if (result != null)
                             {
-                                group.TodayPrayerTimes = times;
-                                group.LastUpdatedDate = now.Date;
+                                group.TodayPrayerTimes = result.Value.Times;
+                                group.TimeZoneId = result.Value.TimeZoneId;
+                                group.LastUpdatedDate = cityNow.Date;
                                 _storageService.UpdateGroup(group);
-                                Console.WriteLine($"Updated prayer times for group {group.ChatId} ({group.City})");
+                                Console.WriteLine($"Updated prayer times for group {group.ChatId} ({group.City}, tz: {group.TimeZoneId})");
                             }
                         }
 
                         // Check if we need to send wird
                         foreach (var prayer in group.TodayPrayerTimes)
                         {
-                            var prayerTime = now.Date + prayer.Value;
-                            
-                            // Check if it's time (within last minute) and haven't sent yet
-                            // We use a simple logic: if now is past prayer time AND (LastPrayerTime is null OR LastPrayerTime is before this prayer time)
-                            // But we need to be careful not to send immediately if we just started the bot and the prayer was 2 hours ago.
-                            // So we only send if now is within, say, 5 minutes of the prayer time.
-                            
-                            if (now >= prayerTime && now < prayerTime.AddMinutes(5))
+                            var prayerTime = cityNow.Date + prayer.Value;
+
+                            // Send if city's current time is within 5 minutes of the prayer time
+                            if (cityNow >= prayerTime && cityNow < prayerTime.AddMinutes(5))
                             {
                                 // Check if we already sent for this specific prayer instance
-                                // We can use LastPrayerTime. If LastPrayerTime is close to this prayerTime, we skip.
-                                bool alreadySent = group.LastPrayerTime.HasValue && 
+                                bool alreadySent = group.LastPrayerTime.HasValue &&
                                                    Math.Abs((group.LastPrayerTime.Value - prayerTime).TotalMinutes) < 10;
 
                                 if (!alreadySent)
                                 {
-                                    Console.WriteLine($"Sending wird for {prayer.Key} to group {group.ChatId}");
+                                    Console.WriteLine($"Sending wird for {prayer.Key} to group {group.ChatId} (city time: {cityNow:HH:mm}, prayer: {prayer.Value})");
                                     await SendWirdAsync(group, prayer.Key);
                                     group.LastPrayerTime = prayerTime;
                                     _storageService.UpdateGroup(group);
